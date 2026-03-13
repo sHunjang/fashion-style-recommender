@@ -1,0 +1,13 @@
+# requirements_spaces.txt
+# HuggingFace Spaces CPU 환경용
+
+torch
+torchvision
+transformers
+faiss-cpu
+gradio
+Pillow
+numpy
+pandas
+pyyaml
+tqdm
