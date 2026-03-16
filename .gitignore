@@ -32,6 +32,7 @@ conda-meta/
 data/raw/
 data/processed/
 data/index/
+data/fashion_detection
 
 # 단, 폴더 구조는 유지
 # (아래 .gitkeep 참고)
