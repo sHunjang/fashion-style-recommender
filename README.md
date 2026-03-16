@@ -22,16 +22,19 @@
 - 📸 이미지 업로드 → 유사 스타일 검색
 - 📝 텍스트 설명 → Zero-shot 이미지 검색
 - 🏷️ 스타일 카테고리 자동 분류 (casual, formal, sport, street, vintage)
+- 🔬 Zero-shot vs Fine-tuned 성능 비교
 - 🚀 REST API 서버 제공 (FastAPI)
 - 🌐 웹 데모 배포 (HuggingFace Spaces)
 
 ---
 
-## 🌐 데모
+## 🌐 데모 & 모델
 
-**HuggingFace Spaces**: [fashion-style-recommender](https://huggingface.co/spaces/sngdmtdkw-02/fashion-style-recommender)
-
-**HuggingFace Dataset**: [fashion-product-images](https://huggingface.co/datasets/sngdmtdkw-02/fashion-product-images)
+| 리소스 | 링크 |
+|--------|------|
+| 🤗 Spaces 데모 | [fashion-style-recommender](https://huggingface.co/spaces/sngdmtdkw-02/fashion-style-recommender) |
+| 🤗 LoRA 모델 | [fashion-clip-lora](https://huggingface.co/sngdmtdkw-02/fashion-clip-lora) |
+| 🤗 데이터셋 | [fashion-product-images](https://huggingface.co/datasets/sngdmtdkw-02/fashion-product-images) |
 
 ---
 
@@ -42,7 +45,7 @@
     ↓                        ↓
 [Image Encoder]        [Text Encoder]
 (CLIP ViT-B/32)        (CLIP Transformer)
-    ↓                        ↓
+    ↓         LoRA 파인튜닝        ↓
     └──── 512d L2정규화 임베딩 ────┘
                  ↓
          [FAISS IVF Index]
@@ -62,6 +65,7 @@
 |------|------|------|
 | PyTorch | 2.10.0+cu128 | 딥러닝 프레임워크 |
 | CLIP | ViT-B/32 | 이미지-텍스트 임베딩 |
+| PEFT | 최신 | LoRA 파인튜닝 |
 | FAISS | 1.13.2 | 벡터 유사도 검색 |
 | Transformers | 5.3.0 | CLIP 모델 로드 |
 
@@ -77,7 +81,7 @@
 | 기술 | 용도 |
 |------|------|
 | HuggingFace Spaces | 무료 배포 (CPU Basic) |
-| HuggingFace Dataset | 이미지 데이터 호스팅 |
+| HuggingFace Hub | 모델 & 데이터 호스팅 |
 | GitHub | 버전 관리 (Git Flow) |
 | conda | 환경 관리 |
 
@@ -112,6 +116,92 @@
 
 ---
 
+## 📈 성능
+
+### Zero-shot vs Fine-tuned 비교
+
+| 지표 | Zero-shot | Fine-tuned (LoRA) | 개선율 |
+|------|:---------:|:-----------------:|:------:|
+| Recall@1 | 25.6% | **47.8%** | +86.7% |
+| Recall@5 | 62.4% | **88.4%** | +41.7% |
+| Recall@10 | 77.6% | **98.0%** | +26.3% |
+| MRR | 0.418 | **0.643** | +53.8% |
+| Image-Text 유사도 | 0.199 | **0.748** | +276% |
+| 유사도 Gap | 0.107 | **0.694** | +549% |
+
+### Fine-tuning 최적 설정
+
+| 파라미터 | 값 |
+|----------|-----|
+| 방식 | LoRA (Low-Rank Adaptation) |
+| lora_r | 16 |
+| lora_alpha | 32 |
+| lora_dropout | 0.1 |
+| temperature | 0.07 |
+| epochs | 15 |
+| learning rate | 1e-4 |
+| 학습 데이터 | 7,000장 |
+| 학습 파라미터 | 983,040개 (전체의 0.65%) |
+| Best Loss | 0.1995 |
+
+### 검색 속도
+
+| 지표 | 값 |
+|------|-----|
+| 이미지 인코딩 | 0.9ms/장 (GPU fp16) |
+| 텍스트 검색 | 6.4ms/쿼리 |
+| 초당 쿼리 | 156 QPS |
+| GPU 메모리 (Zero-shot) | 296MB |
+| GPU 메모리 (Fine-tuned) | 601MB |
+
+---
+
+## 🔬 LoRA Fine-tuning
+
+### 개념
+
+```
+기존 CLIP 가중치 W (고정, Frozen)
++ 저랭크 행렬 A × B (학습)
+W' = W + A × B
+
+전체 파라미터: 152,260,353개
+학습 파라미터:     983,040개 (0.65%)
+→ 99.35% 절약하면서 패션 도메인 특화!
+```
+
+### Contrastive Loss
+
+```
+배치 N개 이미지-텍스트 쌍
+→ N×N 유사도 행렬
+→ 대각선 (짝) 최대화
+→ 비대각선 (비짝) 최소화
+
+Loss = (L_image + L_text) / 2
+```
+
+### 실험 기록
+
+| 실험 | lora_r | epochs | lr | samples | Best Loss | Recall@1 |
+|------|:------:|:------:|:--:|:-------:|:---------:|:--------:|
+| 1차 | 8 | 3 | 1e-4 | 2,000 | 0.5259 | 30.4% |
+| 2차 | 8 | 10 | 1e-5 | 2,000 | 0.6609 | 30.4% ❌ |
+| 3차 | 8 | 10 | 1e-4 | 2,000 | 0.3295 | 36.8% |
+| 4차 | 8 | 10 | 1e-4 | 5,000 | 0.2905 | 38.4% |
+| **5차** | **16** | **15** | **1e-4** | **7,000** | **0.1995** | **47.8%** ⭐ |
+
+### 핵심 인사이트
+
+```
+① lora_r 증가 (8→16): 표현력 2배 → 성능 대폭 향상
+② 데이터 증가 (2000→7000): 일반화 성능 향상
+③ lr=1e-4: CLIP 파인튜닝 최적 학습률
+④ temperature=0.07: CLIP 원논문 설정이 가장 안정적
+```
+
+---
+
 ## 🚀 빠른 시작
 
 ```bash
@@ -131,6 +221,9 @@ uvicorn src.api.main:app --reload --port 8000
 
 # 웹 데모 실행
 python app/demo.py
+
+# 파인튜닝 실행
+python tests/test_finetune.py
 ```
 
 ### API 엔드포인트
@@ -149,12 +242,19 @@ python app/demo.py
 ## 🌿 브랜치 전략 (Git Flow)
 
 ```
-main        → 배포 브랜치 (v1.0.0 태그)
+main        → 배포 브랜치
 develop     → 개발 통합 브랜치
 feature/*   → 기능 개발
 release/*   → 배포 준비
 hotfix/*    → 긴급 수정
 ```
+
+### 릴리즈 히스토리
+
+| 버전 | 내용 |
+|------|------|
+| v1.0.0 | CLIP 검색 + FastAPI + Gradio + HF Spaces 배포 |
+| v1.1.0 | LoRA 파인튜닝 추가 (Recall@10 77.6%→98.0%) |
 
 ### 커밋 히스토리
 
@@ -166,45 +266,8 @@ hotfix/*    → 긴급 수정
 | feature/faiss-search | FAISSIndexer, FashionRetriever |
 | feature/api-server | FastAPI REST API |
 | feature/web-demo | Gradio UI + HuggingFace Spaces 배포 |
-| release/v1.0.0 | main 배포 |
-
----
-
-## 📈 성능
-
-### Zero-shot vs Fine-tuned 비교
-
-| 지표 | Zero-shot | Fine-tuned (LoRA) | 개선율 |
-|------|:---------:|:-----------------:|:------:|
-| Recall@1 | 25.6% | **47.8%** | +86.7% |
-| Recall@5 | 62.4% | **88.4%** | +41.7% |
-| Recall@10 | 77.6% | **98.0%** | +26.3% |
-| MRR | 0.418 | **0.643** | +53.8% |
-| Image-Text 유사도 | 0.199 | **0.748** | +276% |
-| 유사도 Gap | 0.107 | **0.694** | +549% |
-
-### Fine-tuning 설정
-
-| 파라미터 | 값 |
-|----------|-----|
-| 방식 | LoRA (Low-Rank Adaptation) |
-| lora_r | 16 |
-| lora_alpha | 32 |
-| lora_dropout | 0.1 |
-| temperature | 0.07 |
-| epochs | 15 |
-| learning rate | 1e-4 |
-| 학습 데이터 | 7,000장 |
-| 학습 파라미터 | 983,040개 (전체의 0.65%) |
-
-### 속도
-
-| 지표 | 값 |
-|------|-----|
-| 이미지 인코딩 | 0.9ms/장 (GPU fp16) |
-| 텍스트 검색 | 6.4ms/쿼리 |
-| 초당 쿼리 | 156 QPS |
-| GPU 메모리 | 296MB (Zero-shot) / 601MB (Fine-tuned) |
+| feature/fine-tuning | LoRA + Contrastive Learning 구현 |
+| feature/finetune-integration | CLIPEncoder에 LoRA 통합 |
 
 ---
 
@@ -218,6 +281,9 @@ hotfix/*    → 긴급 수정
 | app.py vs app/ 패키지 충돌 | Python 모듈명 충돌 | `__init__.py` 추가 |
 | HF Upload Rate Limit | 파일마다 개별 커밋 | `upload_large_folder` 사용 |
 | Spaces 데이터 경로 불일치 | snapshot_download 경로 구조 차이 | `ignore_patterns`로 분리 저장 |
+| temperature=0.05 성능 하락 | Loss 분포 너무 날카로워 불안정 | 0.07로 복구 |
+| lr=1e-5 성능 하락 | 10 에폭으로도 수렴 부족 | 1e-4로 복구 |
+| `_is_finetuned` 표시 오류 | 조건문 내부 누락 | `_is_finetuned=True` 추가 |
 
 ---
 
@@ -227,18 +293,21 @@ hotfix/*    → 긴급 수정
 fashion-style-recommender/
 ├── src/
 │   ├── data/
-│   │   ├── dataset.py        # FashionDataset (Hash Map, DataFrame)
-│   │   ├── preprocessor.py   # FashionPreprocessor (train/inference 모드)
-│   │   └── downloader.py     # FashionDataDownloader (무결성 검증)
+│   │   ├── dataset.py        # FashionDataset
+│   │   ├── preprocessor.py   # FashionPreprocessor
+│   │   └── downloader.py     # FashionDataDownloader
 │   ├── models/
-│   │   ├── clip_encoder.py   # FashionCLIPEncoder (GPU fp16)
-│   │   └── similarity.py     # FashionSimilarityCalculator (N×M 행렬)
+│   │   ├── clip_encoder.py   # FashionCLIPEncoder (LoRA 지원)
+│   │   └── similarity.py     # FashionSimilarityCalculator
 │   ├── search/
-│   │   ├── indexer.py        # FashionFAISSIndexer (IVF Index)
-│   │   └── retriever.py      # FashionRetriever (통합 파이프라인)
+│   │   ├── indexer.py        # FashionFAISSIndexer
+│   │   └── retriever.py      # FashionRetriever
+│   ├── training/
+│   │   ├── trainer.py        # FashionCLIPLoRATrainer
+│   │   └── evaluator.py      # FashionCLIPEvaluator
 │   └── api/
-│       ├── main.py           # FastAPI 앱 (lifespan)
-│       ├── routes.py         # 엔드포인트 정의
+│       ├── main.py           # FastAPI 앱
+│       ├── routes.py         # 엔드포인트
 │       └── schemas.py        # Pydantic 스키마
 ├── app/
 │   └── demo.py               # Gradio 웹 데모 (로컬용)
@@ -259,5 +328,6 @@ fashion-style-recommender/
 
 **핵심 기여**:
 - CLIP 기반 의미론적 스타일 임베딩
-- Zero-shot 스타일 카테고리 분류
+- LoRA 경량 파인튜닝으로 패션 도메인 특화
+- Zero-shot vs Fine-tuned 정량적 성능 비교
 - FAISS IVF 기반 실시간 유사도 검색
