@@ -54,6 +54,7 @@ class FashionCLIPEncoder:
         model_name: str = "openai/clip-vit-base-patch32",
         device: str = "cuda",
         use_fp16: bool = True,
+        lora_path: str = None,
     ):
         """
         Args:
@@ -61,6 +62,9 @@ class FashionCLIPEncoder:
             device:     'cuda' | 'cpu'
             use_fp16:   float16 사용 여부
                         GPU 메모리 절약 + 속도 향상!
+            lora_path:  LoRA 어댑터 경로
+                        None → Zero-shot (기존)
+                        경로 → Fine-tuned 모델 로드
         """
         # 디바이스 설정
         self.device = torch.device(
@@ -104,6 +108,33 @@ class FashionCLIPEncoder:
         # 추론 모드 고정
         # 드롭아웃 비활성화 + 배치 정규화 고정
         self.model.eval()
+        
+        # ----------------------------------------
+        # LoRA 어댑터 로드 (파인튜닝 모델)
+        # ----------------------------------------
+        self._is_finetuned= False
+        if lora_path and Path(lora_path).exists():
+            from peft import PeftModel
+            logger.info(
+                f"[CLIPEncoder] LoRA 로드: {lora_path}"
+            )
+            self.model = PeftModel.from_pretrained(
+                self.model, lora_path
+            )
+            # LoRA 가중치를 기존 가중치에 병합!
+            # → 추론 속도 Zero-shot과 동일하게 유지!
+            self.model = self.model.merge_and_unload()
+            self.model.eval()
+            self._is_finetuned = True
+            logger.info(
+                "[CLIPEncoder] LoRA 병합 완료! "
+                "(Fine-tuned 모드)"
+            )
+        else:
+            logger.info(
+                "[CLIPEncoder] Zero-shot 모드"
+            )
+
 
         # 임베딩 차원 확인
         self.embed_dim = (
@@ -361,6 +392,7 @@ class FashionCLIPEncoder:
             "device":    str(self.device),
             "dtype":     str(self.dtype),
             "use_fp16":  self.use_fp16,
+            "mode": "fine-tuned" if self._is_finetuned else "zero-shot",
         }
 
         if self.device.type == "cuda":
