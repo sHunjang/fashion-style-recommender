@@ -15,8 +15,8 @@ print()
 # ----------------------------------------
 trainer = FashionCLIPLoRATrainer(
     device="cuda",
-    lora_r=8,
-    lora_alpha=16,
+    lora_r=16,
+    lora_alpha=32,
     lora_dropout=0.1,
     temperature=0.07,
 )
@@ -29,10 +29,10 @@ print("=== Fine-tuning 시작 ===")
 history = trainer.train(
     data_dir="data/raw",
     save_dir="models/lora",
-    epochs=3,
+    epochs=15,
     batch_size=32,
     lr=1e-4,
-    max_samples=2000,  # 테스트용 2000장
+    max_samples=7000,  # 테스트용 5000장
 )
 
 print()
